@@ -1,41 +1,53 @@
-// Computes columns using dependency depth, independent of JSON order.
-export function buildColumns(devices) {
+const buildColumns = (devices) => {
   const deviceMap = new Map();
   devices.forEach(d => deviceMap.set(d.id, d));
 
-  // track assigned column for each device (id ==> number)
-  const col = new Map();
+  const memo = new Map();
+  const visiting = new Set();
 
-  // recursive function: column = 1 + max(column(child))
-  function computeColumn(id) {
-    if (col.has(id)) return col.get(id);
+  const computeColumn = (id) => {
+    if (memo.has(id)) return memo.get(id);
 
-    const dev = deviceMap.get(id);
-
-    // devices with no outbound links
-    if (!dev.links || dev.links.length === 0) {
-      col.set(id, 0);
+    if (visiting.has(id)) {
+      memo.set(id, 0);
       return 0;
     }
 
-    const downstreamCols = dev.links.map(childId => computeColumn(childId));
-    const maxDownstream = Math.max(...downstreamCols);
+    visiting.add(id);
 
-    col.set(id, maxDownstream + 1);
-    return maxDownstream + 1;
+    const dev = deviceMap.get(id);
+
+    if (!dev || !dev.links || dev.links.length === 0) {
+      memo.set(id, 0);
+      visiting.delete(id);
+      return 0;
+    }
+
+    let maxChildCol = 0;
+    for (const childId of dev.links) {
+      const col = computeColumn(childId);
+      if (col > maxChildCol) maxChildCol = col;
+    }
+
+    const myCol = maxChildCol + 1;
+
+    memo.set(id, myCol);
+    visiting.delete(id);
+    return myCol;
   }
 
-  // column for all devices
   devices.forEach(d => computeColumn(d.id));
 
-  // build column list
-  const maxCol = Math.max(...col.values());
+  const maxCol = Math.max(...memo.values());
   const columns = Array.from({ length: maxCol + 1 }, () => []);
 
-  devices.forEach(d => {
-    const c = col.get(d.id);
-    columns[c].push(d.id);
-  });
+  for (const [id, col] of memo.entries()) {
+    columns[col].push(id);
+  }
 
-  return columns; // right ==> left
+  columns.forEach(col => col.sort((a, b) => a.localeCompare(b)));
+
+  return columns;
 }
+
+export default buildColumns
