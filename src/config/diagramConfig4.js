@@ -1,4 +1,4 @@
-export const diagramConfig3 = {
+export const diagramConfig4 = {
   devices: [
     {
       id: "plc-1-c",
