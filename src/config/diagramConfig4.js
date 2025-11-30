@@ -74,7 +74,11 @@ export const diagramConfig4 = {
     {
       id: "kafka",
       status: "up",
-      links: ["config-server", "message-relay", "cribl"]
+      links: [
+        "config-server",
+        "message-relay",
+        "cribl",
+      ]
     },
 
     {

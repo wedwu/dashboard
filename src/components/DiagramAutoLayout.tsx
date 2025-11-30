@@ -1,6 +1,6 @@
 import React, { useRef, useLayoutEffect, useState } from "react";
 
-import { diagramConfig3 as diagramConfig } from "../config/diagramConfig3"
+import { diagramConfig4 as diagramConfig } from "../config/diagramConfig4"
 
 import AutoLayout from "./AutoLayout";
 

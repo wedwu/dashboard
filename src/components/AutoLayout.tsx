@@ -3,8 +3,6 @@ import React, {
   useMemo,
   useState,
   useLayoutEffect,
-  useRef,
-  MutableRefObject,
 } from "react";
 
 // -------------------------------------------------------------
@@ -58,6 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
   up: "#2ecc71",
   down: "#e74c3c",
   unknown: "#7f8c8d",
+  missing: "#e53935",
 };
 
 const TYPE_OUTLINE_COLORS: Record<NodeType, string> = {
@@ -73,6 +72,33 @@ const SCC_COLORS = [
   "#f06292", "#7986cb", "#4db6ac", "#ce93d8", "#90caf9",
   "#a1887f", "#00acc1"
 ];
+
+// -------------------------------------------------------------
+// HELPER: ADD SYNTHETIC "MISSING" NODES
+// -------------------------------------------------------------
+
+function addMissingNodes(devices: DeviceNode[]): DeviceNode[] {
+  const knownIds = new Set(devices.map((d) => d.id));
+  const referenced = new Set<string>();
+
+  for (const d of devices) {
+    for (const link of d.links || []) {
+      referenced.add(link);
+    }
+  }
+
+  const missingIds = Array.from(referenced).filter(
+    (id) => !knownIds.has(id)
+  );
+
+  const missingNodes: DeviceNode[] = missingIds.map((id) => ({
+    id,
+    status: "missing",
+    links: [],
+  }));
+
+  return [...devices, ...missingNodes];
+}
 
 // -------------------------------------------------------------
 // FLOW VALIDATOR
@@ -398,7 +424,9 @@ const assignLayout = (
   const ids = devices.map((d) => d.id);
   const { adj, revAdj, outDegree, inDegree } = buildAdjacency(devices);
 
-  // SCC + node->comp mapping
+  // ---------------------------------------------------------
+  // 1. Compute SCCs
+  // ---------------------------------------------------------
   const { sccs, nodeToComp } = computeSCCs(ids, adj, revAdj);
   const compCount = sccs.length;
 
@@ -414,71 +442,42 @@ const assignLayout = (
     const cu = nodeToComp.get(u)!;
     for (const v of outs) {
       const cv = nodeToComp.get(v)!;
-      if (cu === cv) continue;
-      const set = compAdj.get(cu)!;
-      if (!set.has(cv)) {
-        set.add(cv);
-        compIndeg.set(cv, (compIndeg.get(cv) || 0) + 1);
+      if (cu !== cv) {
+        if (!compAdj.get(cu)!.has(cv)) {
+          compAdj.get(cu)!.add(cv);
+          compIndeg.set(cv, (compIndeg.get(cv) || 0) + 1);
+        }
       }
     }
   }
 
-  // Longest path depth per component (topological)
+  // ---------------------------------------------------------
+  // 2. Longest-path depth per component (topological)
+  // ---------------------------------------------------------
   const depth: number[] = new Array(compCount).fill(0);
-  const indegWork: number[] = new Array(compCount);
+  const indeg = new Array(compCount).fill(0);
   for (let i = 0; i < compCount; i++) {
-    indegWork[i] = compIndeg.get(i) || 0;
+    indeg[i] = compIndeg.get(i) || 0;
   }
 
   const queue: number[] = [];
   for (let i = 0; i < compCount; i++) {
-    if (indegWork[i] === 0) queue.push(i);
+    if (indeg[i] === 0) queue.push(i);
   }
 
   while (queue.length) {
     const c = queue.shift()!;
-    const baseDepth = depth[c];
+    const base = depth[c];
     for (const nxt of compAdj.get(c) || []) {
-      if (baseDepth + 1 > depth[nxt]) {
-        depth[nxt] = baseDepth + 1;
-      }
-      indegWork[nxt] -= 1;
-      if (indegWork[nxt] === 0) queue.push(nxt);
+      if (base + 1 > depth[nxt]) depth[nxt] = base + 1;
+      indeg[nxt]--;
+      if (indeg[nxt] === 0) queue.push(nxt);
     }
   }
 
-  // Weakly-connected components at component level
-  const undAdj = new Map<number, Set<number>>();
-  for (let i = 0; i < compCount; i++) undAdj.set(i, new Set());
-  for (let u = 0; u < compCount; u++) {
-    for (const v of compAdj.get(u) || []) {
-      undAdj.get(u)!.add(v);
-      undAdj.get(v)!.add(u);
-    }
-  }
-
-  const compVisited = new Set<number>();
-  const compGroups: number[][] = [];
-
-  for (let i = 0; i < compCount; i++) {
-    if (compVisited.has(i)) continue;
-    const stack: number[] = [i];
-    compVisited.add(i);
-    const group: number[] = [];
-    while (stack.length) {
-      const c = stack.pop()!;
-      group.push(c);
-      for (const nxt of undAdj.get(c) || []) {
-        if (!compVisited.has(nxt)) {
-          compVisited.add(nxt);
-          stack.push(nxt);
-        }
-      }
-    }
-    compGroups.push(group);
-  }
-
-  // global & group max depth
+  // ---------------------------------------------------------
+  // 3. Balance weakly-connected component groups
+  // ---------------------------------------------------------
   const depthByComp = new Map<number, number>();
   let globalMax = 0;
   for (let i = 0; i < compCount; i++) {
@@ -486,20 +485,51 @@ const assignLayout = (
     if (depth[i] > globalMax) globalMax = depth[i];
   }
 
-  const compDelta = new Map<number, number>();
-  for (const group of compGroups) {
-    let m = 0;
-    for (const c of group) {
-      const d = depthByComp.get(c)!;
-      if (d > m) m = d;
-    }
-    const delta = globalMax - m;
-    for (const c of group) {
-      compDelta.set(c, delta);
+  // build UND graph between components
+  const und = new Map<number, Set<number>>();
+  for (let i = 0; i < compCount; i++) und.set(i, new Set());
+  for (let u = 0; u < compCount; u++) {
+    for (const v of compAdj.get(u) || []) {
+      und.get(u)!.add(v);
+      und.get(v)!.add(u);
     }
   }
 
-  // base & shifted columns per node
+  const compSeen = new Set<number>();
+  const compGroups: number[][] = [];
+
+  for (let i = 0; i < compCount; i++) {
+    if (compSeen.has(i)) continue;
+    const stack = [i];
+    compSeen.add(i);
+    const group: number[] = [];
+    while (stack.length) {
+      const c = stack.pop()!;
+      group.push(c);
+      for (const nxt of und.get(c) || []) {
+        if (!compSeen.has(nxt)) {
+          compSeen.add(nxt);
+          stack.push(nxt);
+        }
+      }
+    }
+    compGroups.push(group);
+  }
+
+  // compute per-group delta
+  const compDelta = new Map<number, number>();
+  for (const g of compGroups) {
+    let maxDepth = 0;
+    for (const c of g) {
+      maxDepth = Math.max(maxDepth, depthByComp.get(c)!);
+    }
+    const delta = globalMax - maxDepth;
+    for (const c of g) compDelta.set(c, delta);
+  }
+
+  // ---------------------------------------------------------
+  // 4. Assign base and final columns FROM SCC DAG
+  // ---------------------------------------------------------
   const baseColMap = new Map<string, number>();
   const finalColMap = new Map<string, number>();
 
@@ -511,15 +541,36 @@ const assignLayout = (
     finalColMap.set(id, base + delta);
   }
 
-  // roots & leaves
+  // ---------------------------------------------------------
+  // 5. FIX: Missing nodes inherit parent column + 1
+  // ---------------------------------------------------------
+  for (const d of devices) {
+    if (d.status !== "missing") continue;
+
+    const parents = revAdj.get(d.id) || [];
+    if (parents.length === 0) continue;
+
+    const parentCols = parents.map(
+      (p) => finalColMap.get(p) ?? baseColMap.get(p) ?? 0
+    );
+
+    const inheritedCol = Math.max(...parentCols) + 1;
+
+    baseColMap.set(d.id, inheritedCol);
+    finalColMap.set(d.id, inheritedCol);
+  }
+
+  // ---------------------------------------------------------
+  // 6. Identify roots, leaves, hubs (unchanged)
+  // ---------------------------------------------------------
   const roots = new Set<string>();
   const leaves = new Set<string>();
+
   for (const id of ids) {
     if ((revAdj.get(id) || []).length === 0) roots.add(id);
     if ((adj.get(id) || []).length === 0) leaves.add(id);
   }
 
-  // classify leaves into service vs client
   const { serviceLeaves, clientLeaves } = classifyLeaves(
     ids,
     adj,
@@ -527,27 +578,12 @@ const assignLayout = (
     outDegree
   );
 
-  // hub cluster: dynamic – parents of service leaves, plus nodes both upstream/downstream of them
   const hubCluster = findHubCluster(ids, adj, revAdj, serviceLeaves);
-
-  // apply hub grouping: push all hubs to the max column among them
-  if (hubCluster.size > 0) {
-    let hubMaxCol = 0;
-    for (const id of hubCluster) {
-      const c = finalColMap.get(id) ?? 0;
-      if (c > hubMaxCol) hubMaxCol = c;
-    }
-    for (const id of hubCluster) {
-      finalColMap.set(id, hubMaxCol);
-    }
-  }
-
-  // Hubs set
   const hubs = new Set<string>(hubCluster);
 
-  // ----------------------------------------------------------------
-  // Build columns + debugInfo
-  // ----------------------------------------------------------------
+  // ---------------------------------------------------------
+  // 7. Build columns + debug info
+  // ---------------------------------------------------------
   const colsDict: Record<number, DeviceNode[]> = {};
   const debugInfo = new Map<string, NodeDebugInfo>();
 
@@ -555,22 +591,29 @@ const assignLayout = (
     const id = d.id;
     const baseCol = baseColMap.get(id) ?? 0;
     const finalCol = finalColMap.get(id) ?? baseCol;
-    const sccIndex = nodeToComp.get(id) ?? 0;
+    const scc = nodeToComp.get(id) ?? 0;
 
     let type: NodeType = "normal";
     if (roots.has(id)) type = "root";
     else if (hubs.has(id)) type = "hub";
     else if (leaves.has(id)) type = "leaf";
 
-    debugInfo.set(id, { baseCol, finalCol, sccIndex, type });
+    debugInfo.set(id, {
+      baseCol,
+      finalCol,
+      sccIndex: scc,
+      type,
+    });
 
-    const colIndex = finalCol;
-    if (!colsDict[colIndex]) colsDict[colIndex] = [];
-    colsDict[colIndex].push(d);
+    if (!colsDict[finalCol]) colsDict[finalCol] = [];
+    colsDict[finalCol].push(d);
   }
 
   const columns = Object.keys(colsDict)
-    .map((k) => ({ col: Number(k), items: colsDict[Number(k)] }))
+    .map((key) => ({
+      col: Number(key),
+      items: colsDict[Number(key)],
+    }))
     .sort((a, b) => a.col - b.col);
 
   return {
@@ -594,12 +637,18 @@ interface DeviceBoxProps {
 }
 
 const DeviceBox: React.FC<DeviceBoxProps> = ({ device, debugMode, debugInfo }) => {
-  const dotColor = STATUS_COLORS[device.status] || STATUS_COLORS.unknown;
+  const isMissing = device.status === "missing";
+
+  const dotColor = isMissing
+    ? STATUS_COLORS.missing
+    : STATUS_COLORS[device.status] || STATUS_COLORS.unknown;
 
   const outlineColor =
-    debugMode && debugInfo
-      ? TYPE_OUTLINE_COLORS[debugInfo.type]
-      : "#111";
+    isMissing
+      ? STATUS_COLORS.missing
+      : (debugMode && debugInfo ? TYPE_OUTLINE_COLORS[debugInfo.type] : "#111");
+
+  const label = isMissing ? `${device.id} (missing)` : device.id;
 
   return (
     <div
@@ -611,7 +660,7 @@ const DeviceBox: React.FC<DeviceBoxProps> = ({ device, debugMode, debugInfo }) =
       }}
     >
       <div style={{ ...boxStyles.dot, backgroundColor: dotColor }} />
-      <span style={boxStyles.label}>{device.id}</span>
+      <span style={boxStyles.label}>{label}</span>
 
       {debugMode && debugInfo && (
         <div
@@ -640,6 +689,12 @@ const DeviceBox: React.FC<DeviceBoxProps> = ({ device, debugMode, debugInfo }) =
 const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
   const [debugMode, setDebugMode] = useState(false);
 
+  // Add synthetic "missing" nodes before layout & validation
+  const devicesWithMissing = useMemo(
+    () => addMissingNodes(devices),
+    [devices]
+  );
+
   const {
     columns,
     debugInfo,
@@ -647,16 +702,15 @@ const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
     hubs,
     leaves,
     sccCount,
-  } = useMemo(() => assignLayout(devices), [devices]);
+  } = useMemo(() => assignLayout(devicesWithMissing), [devicesWithMissing]);
 
   const validation = useMemo(
-    () => validateFlowGraph(devices),
-    [devices]
+    () => validateFlowGraph(devicesWithMissing),
+    [devicesWithMissing]
   );
 
   // ------- SCC overlays (synchronized via useLayoutEffect) -------
   const [sccBounds, setSccBounds] = useState<Map<number, RectBounds>>(new Map());
-  const layoutRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     if (!debugMode) {
@@ -667,7 +721,7 @@ const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
     const measure = () => {
       const bounds = new Map<number, RectBounds>();
 
-      for (const d of devices) {
+      for (const d of devicesWithMissing) {
         const info = debugInfo.get(d.id);
         if (!info) continue;
 
@@ -702,7 +756,7 @@ const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
     return () => {
       window.removeEventListener("resize", measure);
     };
-  }, [debugMode, devices, debugInfo]);
+  }, [debugMode, devicesWithMissing, debugInfo]);
 
   return (
     <>
@@ -827,7 +881,7 @@ const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
         })}
 
       {/* Layout */}
-      <div ref={layoutRef} style={layoutStyles.container}>
+      <div style={layoutStyles.container}>
         {columns.map(({ col, items }) => (
           <div key={col} style={layoutStyles.column}>
             {items.map((d) => (
