@@ -3,13 +3,11 @@
 ````md
 # Understanding the Graph Layout Engine and Why Kosaraju’s Algorithm Was Chosen
 
-This document explains — in clear, practical terms — how **your JSON structure**, **your diagram**, and **your real-world constraints** influence the layout engine, and why **Kosaraju’s Strongly Connected Component (SCC) algorithm** is used.
-
 ---
 
-# 1. What Your JSON Structure Actually Is
+# 1. What The JSON Structure Actually Is
 
-Your `devices` array represents a **directed graph (digraph)**:
+The `devices` array represents a **directed graph (digraph)**:
 
 ```jsonc
 devices: [
@@ -40,7 +38,7 @@ is a **directed edge**:
 id ======> link
 ```
 
-So your JSON describes edges such as:
+So the JSON describes edges such as:
 
 ```
 (plc-1-c ==> message-server-1)
@@ -87,13 +85,13 @@ It is a **general digraph**.
 
 ---
 
-# 2. Why Normal Layering Algorithms Break
+# 2. Why Normal Layering Break
 
 Standard graph layout algorithms assume:
 
-### **A. The graph is a DAG** (no cycles)
+### **A. The graph is a DAG** (no cycles): Directed Acyclic Graph
 
-But you have:
+But the structure has:
 
 ```
 kafka <==> config-server
@@ -206,9 +204,9 @@ Two DFS passes:
 
 A critical requirement for maintainability.
 
-#### Perfect for your graph size
+#### Perfect for the graph size
 
-Your graph: ~25 nodes
+The graph: ~25 nodes
 Runtime: ~0.03ms
 
 #### Produces deterministic results
@@ -237,7 +235,7 @@ Tarjan’s algorithm is also correct, but:
 * stack bookkeeping can get tricky
 * harder to annotate for SCC overlays
 * more difficult to integrate with component-shifting logic
-* unnecessary complexity for your graph size
+* unnecessary complexity for the graph size
 * less intuitive for future modifications
 
 Kosaraju is:
@@ -247,7 +245,7 @@ DFS1 ==> stack
 DFS2 ==> groups
 ```
 
-Which directly mirrors how you debug your layout.
+Which directly mirrors how you debug the layout.
 
 ---
 
