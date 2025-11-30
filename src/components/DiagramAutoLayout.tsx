@@ -14,7 +14,5 @@ export default function DiagramAutoLayout() {
 
   const devices: DeviceNode[] = diagramConfig.devices
 
-  return (<>hgghg
-    <AutoLayout devices={devices} />
-  </>);
+  return (<><AutoLayout devices={devices} /></>);
 }
