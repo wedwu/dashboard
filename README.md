@@ -1,5 +1,3 @@
----
-
 ````md
 # Understanding the Graph Layout Engine and Why Kosaraju’s Algorithm Was Chosen
 
