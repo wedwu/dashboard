@@ -182,6 +182,8 @@ becomes one **SCC block**, guaranteeing:
 
 # 4. Why Kosaraju Specifically?
 
+DFS (Depth-First Search) is a graph-traversal algorithm that explores each path as far as possible before backtracking.
+
 There are multiple SCC algorithms:
 
 | Algorithm      | Time     | Space      | Notes                     |
