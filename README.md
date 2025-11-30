@@ -1,202 +1,289 @@
-#  ** `README.md` (fully ready-to-save file)**
+---
 
-````markdown
-# REACT — SVG Version
+````md
+# Understanding the Graph Layout Engine and Why Kosaraju’s Algorithm Was Chosen
 
-A React + SVG–based auto-layout diagram engine for rendering device graphs, dependency flows, and topology maps.  
-This branch (`SVG-version`) focuses on **precise SVG line routing**, **DOM-measured layout**, and **reactive auto-positioning** of nodes and connection paths.
+This document explains — in clear, practical terms — how **your JSON structure**, **your diagram**, and **your real-world constraints** influence the layout engine, and why **Kosaraju’s Strongly Connected Component (SCC) algorithm** is used.
 
 ---
 
-## Features
+# 1. What Your JSON Structure Actually Is
 
-- **Automatic Column + Depth Layout**  
-  Uses BFS forward/backward passes to compute upstream/downstream graph depth.
+Your `devices` array represents a **directed graph (digraph)**:
 
-- **SVG Polyline Routing Engine**  
-  Draws dynamic routed edges with clean elbow connectors.
-
-- **Error Icons on Down Nodes**  
-  When a target device has status `"down"`, a Material Symbol error icon is placed at the elbow.
-
-- **DOM-aware Node Measurement**  
-  `getRelativePos()` ensures all SVG coordinates align with rendered React DOM nodes.
-
-- **Configurable Lane Spacing**  
-  Supports `"fixed"`, `"flex"`, and `"adaptive"` routing lanes via `computeLaneGap()`.
-
-- **Vitest + React Testing Library** unit testing included  
-  Graph helpers, geometry helpers, and layout utilities all thoroughly tested.
-
----
-
-## Installation
-
-```bash
-git clone https://github.com/wedwu/REACT.git
-cd REACT
-git checkout SVG-version
-npm install
+```jsonc
+devices: [
+  {
+    id: "plc-1-c",
+    links: ["message-server-1"]
+  },
+  {
+    id: "message-server-1",
+    links: ["kafka", "influx"]
+  },
+  {
+    id: "kafka",
+    links: ["config-server", "message-relay"]
+  }
+]
 ````
 
-Run development server (if example/demo is included):
-
-```bash
-npm run dev
-```
-
-Build for production:
-
-```bash
-npm run build
-```
-
----
-
-## Project Structure
+This means:
 
 ```
-/
-  src/
-    components/
-      DiagramAutoLayout.tsx
-      SvgConnections.tsx
-      DeviceBox.tsx
-      ...
-    utils/
-      graphHelpers.js
-      laneHelpers.js
-      geometry.js
-    styles/
-      diagramStyles.js
-  __tests__/
-      graphHelpers.test.ts
-      laneHelpers.test.ts
-      geometry.test.ts
-      SvgConnections.test.tsx
-  package.json
-  README.md
+node.id ==> node.links[]
 ```
 
----
-
-## Basic Usage
-
-```tsx
-import React from "react";
-import DiagramAutoLayout from "./components/DiagramAutoLayout";
-
-const devices = [
-  { id: "root", status: "up", links: ["serverA", "serverB"] },
-  { id: "serverA", status: "down", links: ["db1"] },
-  { id: "serverB", status: "up", links: [] },
-  { id: "db1", status: "up", links: [] },
-];
-
-export default function App() {
-  return (
-    <DiagramAutoLayout
-      devices={devices}
-      rootId="root"
-      laneMode="adaptive"
-      lanePreset="medium"
-      routingMode="spine"
-      laneScale={1}
-    />
-  );
-}
-```
-
-This will:
-
-* Group nodes into depth-based columns
-* Render each node with a status dot + mini menu
-* Draw SVG connections between nodes
-* Add error icons on “down” nodes
-
----
-
-## Core Algorithms
-
-### **Graph Helpers (`utils/graphHelpers.js`)**
-
-* `buildAdjacency(devices)` → forward + reverse maps
-* `bfsForward(forward, root)` → downstream distances
-* `bfsBackward(reverse, root)` → upstream distances
-* `computeDepths(devices, root)` → final signed depth map
-
-Depth semantics:
-
-* `0` = root
-* `+N` = downstream
-* `-N` = upstream
-
----
-
-### **Lane Helpers (`utils/laneHelpers.js`)**
-
-Lane spacing is computed via:
-
-* `"fixed"` → always preset × scale
-* `"flex"` → span-based spacing
-* `"adaptive"` → `min(flexGap, presetGap)`
-
----
-
-### **Geometry Helper (`utils/geometry.js`)**
-
-`getRelativePos(el, svg)` computes:
-
-* left / right
-* top / bottom
-* width / height
-
-…relative to container SVG viewport (critical for correct polyline routing).
-
----
-
-## Testing
-
-This repo includes complete tests for:
-
-* Graph adjacency
-* BFS forward/backward
-* Depth computation
-* Lane spacing logic
-* Geometry calculations
-* SVG Connections (DOM + RAF stubbing)
-
-Run all tests:
-
-```bash
-npm test
-```
-
-or
-
-```bash
-npx vitest
-```
-
----
-
-## Future Enhancements (optional ideas)
-
-* Interactive node dragging
-* Zoom/pan SVG viewport
-* Highlighting active paths
-* Live animated routing
-* Layout caching for large graphs
-
----
-
-## License
-
-MIT License — feel free to use, modify, and extend.
-
----
-
-## Contributing
-
+is a **directed edge**:
 
 ```
+id ======> link
+```
+
+So your JSON describes edges such as:
+
+```
+(plc-1-c ==> message-server-1)
+(message-server-1 ==> kafka)
+(kafka ==> config-server)
+(config-server ==> kafka)
+(timedoor ==> message-server-3)
+(message-server-3 ==> influx)
+```
+
+These form a general directed graph with:
+
+### Multiple roots
+
+PLCs, gpc, stamp, cribl, config-server
+
+### Multiple sinks
+
+clients, dgn, influx
+
+### Multiple converging points
+
+kafka, influx
+
+### A long dependency chain
+
+redis ==> timedoor ==> message-server-3 ==> {kafka, influx}
+
+### A disconnected subgraph
+
+cribl ==> dgn
+
+### A cycle
+
+kafka <==> config-server
+
+This is **not**:
+
+* a tree
+* a DAG (because of cycles)
+* a single connected component
+
+It is a **general digraph**.
+
+---
+
+# 2. Why Normal Layering Algorithms Break
+
+Standard graph layout algorithms assume:
+
+### **A. The graph is a DAG** (no cycles)
+
+But you have:
+
+```
+kafka <==> config-server
+```
+
+This breaks:
+
+* BFS-based layering
+* topological sort
+* Sugiyama-style layout
+* any algorithm requiring acyclicity
+
+### **B. One root**
+
+You have many.
+
+### **C. One sink**
+
+You have many.
+
+### **D. The graph is connected**
+
+You have isolated chains.
+
+### **E. Distance can be computed globally**
+
+Your diagram requires **path-sensitive column alignment**, such as:
+
+```
+redis ==> column 1
+timedoor ==> column 2
+message-server-3 ==> column 3
+kafka/influx/config-server ==> column 4
+```
+
+This cannot be computed via:
+
+* shortest path
+* longest path
+* BFS distance
+* incoming/outgoing edge counts
+
+Your layout is defined by **flow chains AND cycles**, which requires deeper graph analysis.
+
+---
+
+# 3. Why Strongly Connected Components (SCCs) Are Required
+
+Cycles must be detected and treated as *one unit*.
+
+Example cycle:
+
+```
+kafka ==> config-server ==> kafka
+```
+
+### Without SCC detection, layouts become unstable:
+
+* kafka gets column 3
+* config-server gets column 2
+* next render, the order reverses
+* infinite oscillations
+* non-deterministic results
+* nodes jump columns
+* edges flip direction
+* diagrams misalign
+
+### SCC detection solves this:
+
+Kosaraju’s algorithm:
+
+> “Group nodes that are mutually reachable into a single super-node.”
+
+So:
+
+```
+[ kafka, config-server ]
+```
+
+becomes one **SCC block**, guaranteeing:
+
+* same column
+* stable layout
+* no oscillation
+* deterministic positioning
+
+---
+
+# 4. Why Kosaraju Specifically?
+
+There are multiple SCC algorithms:
+
+| Algorithm      | Time     | Space      | Notes                     |
+| -------------- | -------- | ---------- | ------------------------- |
+| **Kosaraju**   | O(V + E) | simple     | 2 DFS passes              |
+| Tarjan         | O(V + E) | low memory | harder to read / maintain |
+| Gabow          | O(V + E) | optimized  | more complex              |
+| Path-based SCC | O(V + E) | rare       | harder to maintain        |
+
+### Kosaraju Advantages:
+
+#### Extremely simple
+
+Two DFS passes:
+
+1. Forward DFS ==> ordering
+2. Reverse DFS ==> SCC groups
+
+#### Very readable in TypeScript
+
+A critical requirement for maintainability.
+
+#### Perfect for your graph size
+
+Your graph: ~25 nodes
+Runtime: ~0.03ms
+
+#### Produces deterministic results
+
+Same SCC grouping every run — essential for stable diagrams.
+
+#### Supports complex layout constraints
+
+Because SCC reduces the graph into a DAG, enabling:
+
+* deterministic longest-path layering
+* multi-root support
+* multi-sink support
+* disconnected component alignment
+* hub-cluster grouping
+* chained alignment (redis ==> timedoor ==> message-server-3)
+* stable debug overlays
+
+---
+
+# 5. Why NOT Tarjan?
+
+Tarjan’s algorithm is also correct, but:
+
+* much harder to debug
+* stack bookkeeping can get tricky
+* harder to annotate for SCC overlays
+* more difficult to integrate with component-shifting logic
+* unnecessary complexity for your graph size
+* less intuitive for future modifications
+
+Kosaraju is:
+
+```
+DFS1 ==> stack
+DFS2 ==> groups
+```
+
+Which directly mirrors how you debug your layout.
+
+---
+
+# 6. Summary: Why Kosaraju Was Chosen
+
+### Your JSON defines a general directed graph
+
+Not a tree and not a DAG.
+
+### You have cycles
+
+(kafka <==> config-server)
+
+### Kosaraju efficiently identifies SCCs and collapses cycles
+
+This ensures:
+
+* kafka + config-server always share a column
+* no layout jitter
+* stable column assignment
+* predictable rendering
+
+### Kosaraju converts the graph into a DAG
+
+Which enables:
+
+* longest-path layering
+* correct multichain alignment
+* deterministic hub grouping
+* redis ==> timedoor ==> message-server-3 preserved
+* multiple roots and sinks handled
+
+### Completely deterministic
+
+Each render gives identical results.
+
+Ideal for a visualization engine.
+
+
