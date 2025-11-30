@@ -1,11 +1,5 @@
 // AutoLayout.tsx
-import React, {
-  useMemo,
-  useState,
-  useLayoutEffect,
-  useRef,
-  MutableRefObject,
-} from "react";
+import React, { useMemo, useState } from "react";
 
 // -------------------------------------------------------------
 // TYPES
@@ -36,22 +30,8 @@ export interface FlowValidationResult {
   warnings: string[];
 }
 
-interface RectBounds {
-  top: number;
-  left: number;
-  bottom: number;
-  right: number;
-}
-
-type GraphMaps = {
-  adj: Map<string, string[]>;
-  revAdj: Map<string, string[]>;
-  outDegree: Map<string, number>;
-  inDegree: Map<string, number>;
-};
-
 // -------------------------------------------------------------
-// COLORS & CONSTANTS
+// STATUS COLORS
 // -------------------------------------------------------------
 
 const STATUS_COLORS: Record<string, string> = {
@@ -60,19 +40,13 @@ const STATUS_COLORS: Record<string, string> = {
   unknown: "#7f8c8d",
 };
 
+// Outline colors per node type (debug mode)
 const TYPE_OUTLINE_COLORS: Record<NodeType, string> = {
   root: "#2196F3",
   hub: "#9C27B0",
   leaf: "#4CAF50",
   normal: "#9E9E9E",
 };
-
-const SCC_COLORS = [
-  "#e57373", "#64b5f6", "#81c784", "#ffb74d", "#ba68c8",
-  "#4db6ac", "#9575cd", "#4fc3f7", "#aed581", "#ff8a65",
-  "#f06292", "#7986cb", "#4db6ac", "#ce93d8", "#90caf9",
-  "#a1887f", "#00acc1"
-];
 
 // -------------------------------------------------------------
 // FLOW VALIDATOR
@@ -222,8 +196,15 @@ export function validateFlowGraph(devices: DeviceNode[]): FlowValidationResult {
 }
 
 // -------------------------------------------------------------
-// GRAPH HELPERS (SCC + DAG + hub cluster)
+// CORE LAYOUT ENGINE (SCC + DAG + hub cluster)
 // -------------------------------------------------------------
+
+type GraphMaps = {
+  adj: Map<string, string[]>;
+  revAdj: Map<string, string[]>;
+  outDegree: Map<string, number>;
+  inDegree: Map<string, number>;
+};
 
 const buildAdjacency = (devices: DeviceNode[]): GraphMaps => {
   const ids = new Set(devices.map((d) => d.id));
@@ -304,6 +285,7 @@ const computeSCCs = (
 };
 
 // classify leaves into service leaves vs client leaves
+// service leaf: leaf whose parent also has some other child that is non-leaf
 const classifyLeaves = (
   ids: string[],
   children: Map<string, string[]>,
@@ -338,7 +320,7 @@ const classifyLeaves = (
   return { serviceLeaves, clientLeaves };
 };
 
-// dynamic hub cluster (Rule C)
+// dynamic hub cluster (Rule C: include nodes downstream of hub as part of hub group)
 const findHubCluster = (
   ids: string[],
   children: Map<string, string[]>,
@@ -603,7 +585,6 @@ const DeviceBox: React.FC<DeviceBoxProps> = ({ device, debugMode, debugInfo }) =
 
   return (
     <div
-      id={`node-${device.id}`}
       style={{
         ...boxStyles.container,
         border: `2px solid ${outlineColor}`,
@@ -653,56 +634,6 @@ const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
     () => validateFlowGraph(devices),
     [devices]
   );
-
-  // ------- SCC overlays (synchronized via useLayoutEffect) -------
-  const [sccBounds, setSccBounds] = useState<Map<number, RectBounds>>(new Map());
-  const layoutRef = useRef<HTMLDivElement | null>(null);
-
-  useLayoutEffect(() => {
-    if (!debugMode) {
-      setSccBounds(new Map());
-      return;
-    }
-
-    const measure = () => {
-      const bounds = new Map<number, RectBounds>();
-
-      for (const d of devices) {
-        const info = debugInfo.get(d.id);
-        if (!info) continue;
-
-        const el = document.getElementById(`node-${d.id}`);
-        if (!el) continue;
-
-        const rect = el.getBoundingClientRect();
-        const scc = info.sccIndex;
-
-        if (!bounds.has(scc)) {
-          bounds.set(scc, {
-            top: rect.top,
-            left: rect.left,
-            bottom: rect.bottom,
-            right: rect.right,
-          });
-        } else {
-          const b = bounds.get(scc)!;
-          b.top = Math.min(b.top, rect.top);
-          b.left = Math.min(b.left, rect.left);
-          b.bottom = Math.max(b.bottom, rect.bottom);
-          b.right = Math.max(b.right, rect.right);
-        }
-      }
-
-      setSccBounds(bounds);
-    };
-
-    measure();
-
-    window.addEventListener("resize", measure);
-    return () => {
-      window.removeEventListener("resize", measure);
-    };
-  }, [debugMode, devices, debugInfo]);
 
   return (
     <>
@@ -778,56 +709,16 @@ const AutoLayout: React.FC<AutoLayoutProps> = ({ devices }) => {
             <b>Columns:</b>
             {columns.map((c) => (
               <div key={c.col}>
-                col {c.col}: {c.items.map((d) => d.id).join(", ")}
+                col {c.col}:{" "}
+                {c.items.map((d) => d.id).join(", ")}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* SCC overlay rectangles */}
-      {debugMode &&
-        [...sccBounds.entries()].map(([sccIndex, b]) => {
-          const color = SCC_COLORS[sccIndex % SCC_COLORS.length];
-
-          return (
-            <div
-              key={`scc-overlay-${sccIndex}`}
-              style={{
-                position: "fixed",
-                top: b.top - 12,
-                left: b.left - 12,
-                width: b.right - b.left + 24,
-                height: b.bottom - b.top + 24,
-                border: `2px dashed ${color}`,
-                borderRadius: "12px",
-                pointerEvents: "none",
-                zIndex: 9997,
-                background: "rgba(0,0,0,0.0)",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: -20,
-                  left: 0,
-                  padding: "2px 6px",
-                  background: color,
-                  color: "#000",
-                  borderRadius: "6px",
-                  fontSize: "11px",
-                  fontWeight: "bold",
-                  pointerEvents: "none",
-                }}
-              >
-                SCC #{sccIndex}
-              </div>
-            </div>
-          );
-        })}
-
       {/* Layout */}
-      <div ref={layoutRef} style={layoutStyles.container}>
+      <div style={layoutStyles.container}>
         {columns.map(({ col, items }) => (
           <div key={col} style={layoutStyles.column}>
             {items.map((d) => (

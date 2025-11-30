@@ -1,6 +1,6 @@
 import React, { useRef, useLayoutEffect, useState } from "react";
 
-import { diagramConfig4 as diagramConfig } from "../config/diagramConfig4"
+import { diagramConfig3 as diagramConfig } from "../config/diagramConfig3"
 
 import AutoLayout from "./AutoLayout";
 
@@ -14,7 +14,7 @@ export default function DiagramAutoLayout() {
 
   const devices: DeviceNode[] = diagramConfig.devices
 
-  return (
+  return (<>hgghg
     <AutoLayout devices={devices} />
-  );
+  </>);
 }
