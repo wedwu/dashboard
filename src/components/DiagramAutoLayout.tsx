@@ -1,8 +1,10 @@
 import React, { useRef, useLayoutEffect, useState } from "react";
 
-import { diagramConfig4 as diagramConfig } from "../config/diagramConfig4"
+import { diagramConfig5 as diagramConfig } from "../config/diagramConfig5"
 
 import AutoLayout from "./AutoLayout";
+import Diagram from "./Diagram"
+import MeshForceGraph from "./MeshForceGraph";
 
 export interface DeviceNode {
   id: string;
@@ -14,5 +16,11 @@ export default function DiagramAutoLayout() {
 
   const devices: DeviceNode[] = diagramConfig.devices
 
-  return (<><AutoLayout devices={devices} /></>);
+  return (<>
+    <Diagram devices={devices} />
+    <AutoLayout devices={devices} />
+    <div style={{ padding: 20 }}>
+      <MeshForceGraph devices={devices} />
+    </div>
+  </>);
 }
