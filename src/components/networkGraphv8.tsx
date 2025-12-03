@@ -1,6 +1,38 @@
 import React, { useState, useEffect } from 'react';
 
-const diagramConfig5 = {
+interface Device {
+  id: string;
+  status: 'up' | 'down';
+  links: string[];
+}
+
+interface DiagramConfig {
+  devices: Device[];
+}
+
+interface Node {
+  id: string;
+  status: 'up' | 'down';
+  x: number;
+  y: number;
+  column: string;
+}
+
+interface Edge {
+  source: string;
+  target: string;
+  isBidirectional: boolean;
+}
+
+interface ArrowPath {
+  line: { x1: number; y1: number; x2: number; y2: number };
+  endArrow: string;
+  startArrow: string | null;
+  midX: number;
+  midY: number;
+}
+
+const diagramConfig5: DiagramConfig = {
   devices: [
     { id: "plc-1-c", status: "down", links: ["timedoor"] },
     { id: "plc-1-m", status: "down", links: ["timedoor"] },
@@ -27,10 +59,10 @@ const diagramConfig5 = {
   ]
 };
 
-const NetworkGraph = () => {
-  const [nodes, setNodes] = useState([]);
-  const [edges, setEdges] = useState([]);
-  const [hoveredNode, setHoveredNode] = useState(null);
+const NetworkGraph: React.FC = () => {
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
   useEffect(() => {
     const width = 1200;
@@ -40,7 +72,7 @@ const NetworkGraph = () => {
     const nodeMap = new Map();
     
     // Dynamically create columns based on network topology analysis
-    const createColumns = (devices) => {
+    const createColumns = (devices: Device[]): Record<string, string[]> => {
       // Build dependency graph
       const incomingCount = new Map();
       const outgoingCount = new Map();
@@ -118,16 +150,64 @@ const NetworkGraph = () => {
         }
         nodesByPattern.get(pattern).push({
           id: device.id,
-          layer: layers.get(device.id)
+          layer: layers.get(device.id),
+          incomingCount: incomingCount.get(device.id) || 0,
+          outgoingCount: outgoingCount.get(device.id) || 0
         });
       });
       
-      // For each pattern group, assign all nodes to the minimum layer in that group
+      // Analyze network structure to identify "gateway" and "hub" nodes
+      // Gateway: node with many incoming connections from sources (layer 0)
+      // Hub: node that connects to many other nodes
       const adjustedLayers = new Map();
+      
       nodesByPattern.forEach((nodes, pattern) => {
+        // Calculate average characteristics for this pattern group
+        const avgIncoming = nodes.reduce((sum, n) => sum + n.incomingCount, 0) / nodes.length;
+        const avgOutgoing = nodes.reduce((sum, n) => sum + n.outgoingCount, 0) / nodes.length;
         const minLayer = Math.min(...nodes.map(n => n.layer));
+        
+        // Identify gateway nodes (high incoming from layer 0, moderate outgoing)
+        const isGateway = nodes.some(n => {
+          const sourceLinks = devices
+            .filter(d => layers.get(d.id) === 0 && d.links.includes(n.id))
+            .length;
+          return sourceLinks >= 3 && n.outgoingCount >= 2;
+        });
+        
+        // If this is a gateway pattern, place it at layer 1
+        let targetLayer = minLayer;
+        if (isGateway && minLayer === 1) {
+          targetLayer = 1;
+        }
+        
+        // Assign all nodes in this pattern to the same layer
         nodes.forEach(node => {
-          adjustedLayers.set(node.id, minLayer);
+          adjustedLayers.set(node.id, targetLayer);
+        });
+      });
+      
+      // Sort nodes within each layer by their connectivity patterns
+      // This helps separate "hub" nodes from regular nodes at the same layer
+      const layerGroups = new Map();
+      devices.forEach(device => {
+        const layer = adjustedLayers.get(device.id);
+        if (!layerGroups.has(layer)) {
+          layerGroups.set(layer, []);
+        }
+        layerGroups.get(layer).push(device.id);
+      });
+      
+      // For each layer, sort by: incoming count (desc), then outgoing count (desc)
+      layerGroups.forEach((deviceIds, layer) => {
+        deviceIds.sort((a, b) => {
+          const incomingA = incomingCount.get(a) || 0;
+          const incomingB = incomingCount.get(b) || 0;
+          if (incomingA !== incomingB) return incomingB - incomingA;
+          
+          const outgoingA = outgoingCount.get(a) || 0;
+          const outgoingB = outgoingCount.get(b) || 0;
+          return outgoingB - outgoingA;
         });
       });
       
@@ -207,12 +287,12 @@ const NetworkGraph = () => {
     setEdges(edgeList);
   }, []);
 
-  const getNodePosition = (nodeId) => {
+  const getNodePosition = (nodeId: string): { x: number; y: number } => {
     const node = nodes.find(n => n.id === nodeId);
     return node ? { x: node.x, y: node.y } : { x: 0, y: 0 };
   };
 
-  const drawArrow = (x1, y1, x2, y2, isBidirectional = false) => {
+  const drawArrow = (x1: number, y1: number, x2: number, y2: number, isBidirectional: boolean = false): ArrowPath => {
     const angle = Math.atan2(y2 - y1, x2 - x1);
     const arrowLength = 10;
     
