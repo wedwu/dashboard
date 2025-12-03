@@ -11,7 +11,7 @@ import NetworkGraphv1 from './NetworkGraphv1'
 import NetworkGraphv2 from './NetworkGraphv2'
 import NetworkGraphv3 from './NetworkGraphv3'
 import NetworkGraphv4 from './NetworkGraphv4'
-
+import NetworkGraphv6 from './NetworkGraphv6'
 
 export interface DeviceNode {
   id: string;
@@ -24,7 +24,9 @@ export default function DiagramAutoLayout() {
   const devices: DeviceNode[] = diagramConfig.devices
 
   return (<>
-
+    <div style={{ padding: 20 }}>
+      <NetworkGraphv6 />
+    </div>
     <div style={{ padding: 20 }}>
       <NetworkGraphv4 />
     </div>
