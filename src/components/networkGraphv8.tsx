@@ -294,16 +294,52 @@ const NetworkGraph: React.FC = () => {
 
   const drawArrow = (x1: number, y1: number, x2: number, y2: number, isBidirectional: boolean = false): ArrowPath => {
     const angle = Math.atan2(y2 - y1, x2 - x1);
-    const arrowLength = 10;
+    const arrowLength = 12;
     
-    // Shorten the line to account for node size (rectangle extends 50 wide, 30 tall from center)
-    const nodeOffset = 35;
-    const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    // Shorten the line to account for node size (rectangle extends 50 wide, 20 tall from center)
+    // Calculate the actual intersection point with the rectangle
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dist = Math.sqrt(dx * dx + dy * dy);
     
-    const shortenedX1 = x1 + (nodeOffset / dist) * (x2 - x1);
-    const shortenedY1 = y1 + (nodeOffset / dist) * (y2 - y1);
-    const shortenedX2 = x2 - (nodeOffset / dist) * (x2 - x1);
-    const shortenedY2 = y2 - (nodeOffset / dist) * (y2 - y1);
+    // Rectangle dimensions
+    const rectWidth = 100;
+    const rectHeight = 40;
+    const halfWidth = rectWidth / 2;
+    const halfHeight = rectHeight / 2;
+    
+    // Calculate intersection with target rectangle
+    const tx = Math.abs(dx / dist);
+    const ty = Math.abs(dy / dist);
+    let offsetX2 = halfWidth;
+    let offsetY2 = halfHeight;
+    
+    if (halfHeight * tx > halfWidth * ty) {
+      offsetX2 = halfWidth;
+      offsetY2 = halfWidth * ty / tx;
+    } else {
+      offsetY2 = halfHeight;
+      offsetX2 = halfHeight * tx / ty;
+    }
+    
+    // Apply the offset in the correct direction
+    const shortenedX2 = x2 - Math.sign(dx) * offsetX2 - (arrowLength * Math.cos(angle));
+    const shortenedY2 = y2 - Math.sign(dy) * offsetY2 - (arrowLength * Math.sin(angle));
+    
+    // Calculate intersection with source rectangle for bidirectional
+    let offsetX1 = halfWidth;
+    let offsetY1 = halfHeight;
+    
+    if (halfHeight * tx > halfWidth * ty) {
+      offsetX1 = halfWidth;
+      offsetY1 = halfWidth * ty / tx;
+    } else {
+      offsetY1 = halfHeight;
+      offsetX1 = halfHeight * tx / ty;
+    }
+    
+    const shortenedX1 = x1 + Math.sign(dx) * offsetX1 + (arrowLength * Math.cos(angle));
+    const shortenedY1 = y1 + Math.sign(dy) * offsetY1 + (arrowLength * Math.sin(angle));
     
     // Arrow at end (pointing to target)
     const arrowPoint1X = shortenedX2 - arrowLength * Math.cos(angle - Math.PI / 6);
@@ -338,28 +374,30 @@ const NetworkGraph: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-screen bg-gray-900 p-4 overflow-auto">
-      <div className="bg-gray-800 rounded-lg p-4 mb-4">
-        <h2 className="text-2xl font-bold text-white mb-2">Network Device Topology</h2>
-        <div className="flex gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            <span className="text-gray-300">Status: Up</span>
+    <div style={{ width: '100%', height: '100vh', backgroundColor: '#111827', padding: '1rem', overflow: 'auto' }}>
+      <div style={{ backgroundColor: '#1f2937', borderRadius: '0.5rem', padding: '1rem', marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>
+          Network Device Topology
+        </h2>
+        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '1rem', height: '1rem', backgroundColor: '#10b981', borderRadius: '9999px' }}></div>
+            <span style={{ color: '#d1d5db' }}>Status: Up</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-            <span className="text-gray-300">Status: Down</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '1rem', height: '1rem', backgroundColor: '#ef4444', borderRadius: '9999px' }}></div>
+            <span style={{ color: '#d1d5db' }}>Status: Down</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-1 bg-purple-500"></div>
-            <span className="text-gray-300">Bidirectional</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '2rem', height: '0.25rem', backgroundColor: '#a855f7' }}></div>
+            <span style={{ color: '#d1d5db' }}>Bidirectional</span>
           </div>
-          <span className="text-gray-400 ml-4">Total Devices: {nodes.length}</span>
+          <span style={{ color: '#9ca3af', marginLeft: '1rem' }}>Total Devices: {nodes.length}</span>
         </div>
       </div>
       
-      <div className="bg-gray-800 rounded-lg overflow-hidden">
-        <svg width="1200" height="800" className="w-full">
+      <div style={{ backgroundColor: '#1f2937', borderRadius: '0.5rem', overflow: 'hidden' }}>
+        <svg width="1200" height="800" style={{ width: '100%' }}>
           {/* Draw edges */}
           <g>
             {edges.map((edge, i) => {
@@ -390,13 +428,13 @@ const NetworkGraph: React.FC = () => {
                   <path
                     d={arrow.endArrow}
                     fill={strokeColor}
-                    opacity="0.8"
+                    opacity="1"
                   />
                   {arrow.startArrow && (
                     <path
                       d={arrow.startArrow}
                       fill={strokeColor}
-                      opacity="0.8"
+                      opacity="1"
                     />
                   )}
                   {/* Warning icon at midpoint if connection is down */}
