@@ -9,6 +9,7 @@ import Graph from './GROK'
 import NetworkGraph from './networkGraph'
 import NetworkGraphv1 from './NetworkGraphv1'
 import NetworkGraphv2 from './NetworkGraphv2'
+import NetworkGraphv3 from './NetworkGraphv3'
 
 export interface DeviceNode {
   id: string;
@@ -21,6 +22,9 @@ export default function DiagramAutoLayout() {
   const devices: DeviceNode[] = diagramConfig.devices
 
   return (<>
+    <div style={{ padding: 20 }}>
+      <NetworkGraphv3 />
+    </div>  
     <div style={{ padding: 20 }}>
       <NetworkGraphv2 />
     </div>    
