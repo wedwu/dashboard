@@ -42,7 +42,7 @@ export const diagramConfig6 = {
     {
       id: "message-relay",
       status: "down",
-      links: ["kafka", "message-client-1", "message-client-2", "trackmap-client-1"],
+      links: ["kafka", "message-client-1", "message-client-2", "trackmap-client-1", "trackmap-client-2"],
     },
     { id: "dgn", status: "up", links: ["cribl"] },
     { id: "cribl", status: "up", links: ["dgn"] },
@@ -50,6 +50,6 @@ export const diagramConfig6 = {
     { id: "message-client-2", status: "down", links: ["message-relay"] },
     { id: "trackmap-client-1", status: "up", links: ["message-relay"] },
     { id: "trackmap-client-2", status: "up", links: ["message-relay"] },
-    { id: "system-map-client-1", status: "up", links: ["config-server"] },
+    // { id: "system-map-client-1", status: "up", links: ["config-server"] },
   ],
 };
