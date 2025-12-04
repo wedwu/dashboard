@@ -1,15 +1,6 @@
 // src/layout/graphLayers.ts
 import type { RawDevice } from "../types/types";
 
-/* 
- * The algorithm finds root nodes (those with no incoming connections) 
- * and sets them to column 0, then iteratively assigns each node to 
- * one column beyond the maximum column of any node linking to it 
- * (longest path); finally, it identifies client nodes 
- * (those with incoming connections from hubs but low outgoing connections) 
- * and moves them to a final rightmost column.
- */
-
 interface NodeInfo {
   id: string;
   incomingFrom: string[];
@@ -68,7 +59,10 @@ function roughPlacement(graph: Map<string, NodeInfo>, roots: string[]): void {
     graph.get(rootId)!.column = 0;
   }
 
-  // Iteratively assign columns based on longest path from roots
+  // Track initial assignments to detect minimum valid column
+  const minColumn = new Map<string, number>();
+
+  // First pass: assign minimum columns based on incoming edges (ignore back-edges)
   let changed = true;
   let iterations = 0;
   const maxIterations = graph.size * 2;
@@ -80,14 +74,26 @@ function roughPlacement(graph: Map<string, NodeInfo>, roots: string[]): void {
     for (const [id, node] of graph) {
       if (node.column === -1) continue;
 
-      // For each outgoing connection, set its column to at least current + 1
+      // For each outgoing connection
       for (const targetId of node.outgoingTo) {
         const target = graph.get(targetId)!;
         const proposedColumn = node.column + 1;
 
-        if (target.column === -1 || proposedColumn > target.column) {
-          target.column = proposedColumn;
-          changed = true;
+        // Only update if this is a forward edge (not a back-edge)
+        // A back-edge is when target already has a column <= current node
+        const isBackEdge = target.column !== -1 && target.column <= node.column;
+        
+        if (!isBackEdge) {
+          if (target.column === -1 || proposedColumn > target.column) {
+            target.column = proposedColumn;
+            
+            // Track minimum valid column for this node
+            if (!minColumn.has(targetId) || proposedColumn < minColumn.get(targetId)!) {
+              minColumn.set(targetId, proposedColumn);
+            }
+            
+            changed = true;
+          }
         }
       }
     }
@@ -99,52 +105,52 @@ function roughPlacement(graph: Map<string, NodeInfo>, roots: string[]): void {
       node.column = 0;
     }
   }
-}
 
-function adjustSpecialCases(graph: Map<string, NodeInfo>): void {
-  // Find hubs (nodes with many outgoing connections)
-  const hubs = new Set<string>();
+  // Second pass: for nodes with bidirectional connections, use the minimum column
   for (const [id, node] of graph) {
-    if (node.outgoingTo.length >= 3) {
-      hubs.add(id);
-    }
-  }
-
-  // Identify clients: nodes with incoming from hubs, low out-degree, not hubs themselves
-  const clients = new Set<string>();
-  for (const [id, node] of graph) {
-    if (hubs.has(id)) continue;
-    if (node.incomingFrom.length === 0) continue;
-
-    // Pure leaf with incoming
-    if (node.outgoingTo.length === 0) {
-      clients.add(id);
-      continue;
-    }
-
-    // Low out-degree with incoming from hub
-    if (node.outgoingTo.length <= 2) {
-      const hasIncomingFromHub = node.incomingFrom.some((src) => hubs.has(src));
-      if (hasIncomingFromHub) {
-        const nonHubIncoming = node.incomingFrom.filter((src) => !hubs.has(src));
-        if (nonHubIncoming.length === 0) {
-          clients.add(id);
+    for (const targetId of node.outgoingTo) {
+      const target = graph.get(targetId)!;
+      
+      // Check if bidirectional (target also points back)
+      if (target.outgoingTo.includes(id)) {
+        // Both nodes should use their minimum calculated column
+        if (minColumn.has(id)) {
+          const minCol = minColumn.get(id)!;
+          if (node.column > minCol) {
+            node.column = minCol;
+          }
+        }
+        if (minColumn.has(targetId)) {
+          const minCol = minColumn.get(targetId)!;
+          if (target.column > minCol) {
+            target.column = minCol;
+          }
         }
       }
     }
   }
+}
 
-  // Find max column (excluding clients)
+function adjustSpecialCases(graph: Map<string, NodeInfo>): void {
+  // Find max column before adjustments
   let maxColumn = 0;
   for (const [id, node] of graph) {
-    if (!clients.has(id) && node.column > maxColumn) {
+    if (node.column > maxColumn) {
       maxColumn = node.column;
     }
   }
 
-  // Move clients to final column
-  for (const clientId of clients) {
-    graph.get(clientId)!.column = maxColumn + 1;
+  // Identify leaf nodes (no outgoing connections)
+  const leafNodes = new Set<string>();
+  for (const [id, node] of graph) {
+    if (node.outgoingTo.length === 0 && node.incomingFrom.length > 0) {
+      leafNodes.add(id);
+    }
+  }
+
+  // Move all leaf nodes to final column
+  for (const leafId of leafNodes) {
+    graph.get(leafId)!.column = maxColumn + 1;
   }
 }
 
@@ -155,10 +161,10 @@ const computeLayers = (devices: RawDevice[]): Map<string, number> => {
   // Step 2: Find starting points (nodes with no incoming)
   const roots = findRootNodes(graph);
 
-  // Step 3: Do rough placement
+  // Step 3: Do rough placement using longest path (detecting back-edges)
   roughPlacement(graph, roots);
 
-  // Step 4: Adjust special cases (clients, etc.)
+  // Step 4: Adjust special cases (move leafs to final column)
   adjustSpecialCases(graph);
 
   // Step 5: Convert to result map

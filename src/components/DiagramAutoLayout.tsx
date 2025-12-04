@@ -1,21 +1,21 @@
 import React, { useRef, useLayoutEffect, useState } from "react";
 
-import { diagramConfig5 } from "../config/diagramConfig5"
-import { diagramConfig6 } from "../config/diagramConfig6"
+// import { diagramConfig5 } from "../config/diagramConfig5"
+import { diagramConfig6 } from "../config/diagramConfig7"
 
-import AutoLayout from "./AutoLayout";
-import Diagram from "./Diagram"
-import MeshForceGraph from "./MeshForceGraph";
-import Graph from './GROK'
+// import AutoLayout from "./AutoLayout";
+// import Diagram from "./Diagram"
+// import MeshForceGraph from "./MeshForceGraph";
+// import Graph from './GROK'
 // import NetworkGraph from './networkGraph'
-import NetworkGraphv1 from './NetworkGraphv1'
-import NetworkGraphv2 from './NetworkGraphv2'
-import NetworkGraphv3 from './NetworkGraphv3'
-import NetworkGraphv4 from './NetworkGraphv4'
-import NetworkGraphv6 from './NetworkGraphv6'
+// import NetworkGraphv1 from './NetworkGraphv1'
+// import NetworkGraphv2 from './NetworkGraphv2'
+// import NetworkGraphv3 from './NetworkGraphv3'
+// import NetworkGraphv4 from './NetworkGraphv4'
+// import NetworkGraphv6 from './NetworkGraphv6'
 
-import NetworkGraphv12 from './NetworkGraphv12'
-import NetworkGraph from './NetworkGraphv13'
+// import NetworkGraphv12 from './NetworkGraphv12'
+// import NetworkGraph from './NetworkGraphv13'
 
 // import buildColumnsFromLinks from '../layout/buildColumnsFromLinks'
 import computeLayers  from '../layout/graphLayers'

@@ -11,6 +11,30 @@ const Diagram: React.FC = () => {
     []
   );
 
+
+
+import { computeLayers } from "../layout/graphLayers";
+import { diagramConfig5 } from "../data/diagramConfig5";
+
+const layerMap = computeLayers(diagramConfig5.devices);
+
+console.log("=== COLUMN GROUPS ===");
+const groups = new Map<number, string[]>();
+
+layerMap.forEach((col, id) => {
+  if (!groups.has(col)) groups.set(col, []);
+  groups.get(col)!.push(id);
+});
+
+Array.from(groups.keys())
+  .sort((a, b) => a - b)
+  .forEach((col) => {
+    console.log(`Column ${col}:`, groups.get(col));
+  });
+
+
+
+
   return (
     <div
       style={{
