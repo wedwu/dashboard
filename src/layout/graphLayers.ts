@@ -1,6 +1,9 @@
 // src/layout/graphLayers.ts
 import type { RawDevice } from "../types/types";
 
+
+//  WHY
+
 interface NodeInfo {
   id: string;
   incomingFrom: string[];
