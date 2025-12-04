@@ -4,13 +4,11 @@
 // Color Variables
 $gray-900: #111827;
 $gray-800: #1f2937;
-$gray-700: #374151;
 $gray-400: #9ca3af;
 $gray-300: #d1d5db;
 $white: #ffffff;
 $green-500: #10b981;
 $red-500: #ef4444;
-$red-400: #f87171;
 $purple-500: #a855f7;
 $yellow-400: #fbbf24;
 
@@ -64,93 +62,6 @@ $yellow-400: #fbbf24;
   }
 }
 
-// Debug Panel
-.debug-toggle {
-  background-color: $gray-700;
-  color: $white;
-  border: 1px solid $gray-400;
-  border-radius: 0.25rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover {
-    background-color: $gray-900;
-  }
-}
-
-.debug-panel {
-  background-color: $gray-800;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
-  color: $white;
-  font-size: 0.875rem;
-
-  &__title {
-    font-size: 1.125rem;
-    font-weight: 700;
-    margin-top: 0;
-    margin-bottom: 1rem;
-    color: $white;
-  }
-}
-
-.debug-section {
-  margin-bottom: 1rem;
-  
-  &:last-child {
-    margin-bottom: 0;
-  }
-}
-
-.debug-label {
-  font-weight: 600;
-  color: $gray-300;
-  margin-bottom: 0.25rem;
-}
-
-.debug-value {
-  color: $white;
-  font-family: monospace;
-}
-
-.debug-warnings {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.debug-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  color: $red-400;
-  line-height: 1.5;
-}
-
-.warning-icon {
-  flex-shrink: 0;
-  font-size: 1rem;
-}
-
-.debug-columns {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.debug-column {
-  color: $white;
-  font-family: monospace;
-  font-size: 0.8125rem;
-  
-  strong {
-    color: $gray-300;
-  }
-}
-
 // Legend Components
 .legend-item {
   display: flex;
@@ -190,78 +101,7 @@ $yellow-400: #fbbf24;
   margin-left: 1rem;
 }
 
-// Node DIV Styles
-.node-div {
-  position: absolute;
-  min-width: 80px;
-  max-width: 200px;
-  width: 200px;
-  min-height: 40px;
-  height: auto;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 0.9;
-  transition: all 0.2s ease;
-  border: 2px solid $gray-800;
-  z-index: 10;
-  padding: 8px 12px;
-  box-sizing: border-box;
-
-  &--up {
-    background-color: $green-500;
-  }
-
-  &--down {
-    background-color: $red-500;
-  }
-
-  &--hovered {
-    border-color: $yellow-400;
-    border-width: 3px;
-    box-shadow: 0 0 10px rgba($yellow-400, 0.5);
-  }
-
-  &__content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    gap: 4px;
-  }
-
-  &__text {
-    color: $white;
-    font-size: 11px;
-    font-weight: 600;
-    user-select: none;
-    pointer-events: none;
-    text-align: center;
-    line-height: 1.3;
-    word-wrap: break-word;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__tooltip {
-    position: absolute;
-    top: -35px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: $yellow-400;
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 20;
-  }
-}
-
-// Node Rect Styles (kept for backward compatibility)
+// Node Styles
 .node-rect {
   opacity: 0.9;
   

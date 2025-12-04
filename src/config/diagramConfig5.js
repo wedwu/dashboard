@@ -136,7 +136,7 @@ export const diagramConfig5 = {
   {
     id: "trackmap-client-2",
     status: "up",
-    links: ["message-server-3"],
+    links: ["message-relay"],
   },
 
   // bidirectional to/from config-server

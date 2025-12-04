@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
+import './NetworkGraph.scss'
+
+
 interface Device {
   id: string;
   status: 'up' | 'down';
@@ -44,7 +47,7 @@ const diagramConfig5: DiagramConfig = {
     { id: "redis", status: "up", links: ["message-server-1"] },
     { id: "message-server-1", status: "up", links: ["kafka", "config-server", "influx"] },
     { id: "message-server-2", status: "up", links: ["kafka", "config-server", "influx"] },
-    { id: "message-server-3", status: "up", links: ["trackmap-client-2"] },
+    { id: "message-server-3", status: "up", links: ["kafka", "config-server", "influx"] },
     { id: "influx", status: "down", links: ["cribl"] },
     { id: "kafka", status: "up", links: ["message-server-1", "message-server-2", "config-server", "cribl", "message-relay"] },
     { id: "config-server", status: "up", links: ["kafka", "system-map-client-1", "message-server-1", "message-server-2", "message-server-3", "timedoor", "cribl"] },
@@ -54,15 +57,21 @@ const diagramConfig5: DiagramConfig = {
     { id: "message-client-1", status: "up", links: ["message-relay"] },
     { id: "message-client-2", status: "down", links: ["message-relay"] },
     { id: "trackmap-client-1", status: "up", links: ["message-relay"] },
-    { id: "trackmap-client-2", status: "up", links: ["message-server-3"] },
+    { id: "trackmap-client-2", status: "up", links: ["message-relay"] },
     { id: "system-map-client-1", status: "up", links: ["config-server"] }
   ]
 };
 
-const NetworkGraph: React.FC = () => {
+const NetworkGraphv12: React.FC = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [nodeHeights, setNodeHeights] = useState<Map<string, number>>(new Map());
+  const [nodeWidths, setNodeWidths] = useState<Map<string, number>>(new Map());
+  const [showDebug, setShowDebug] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+
+  const nodeRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     const width = 1200;
@@ -231,7 +240,11 @@ const NetworkGraph: React.FC = () => {
       const layerB = parseInt(b.split('-')[1]);
       return layerA - layerB;
     });
-    const columnWidth = width / (columnOrder.length + 1);
+    
+    // Increased column spacing for wider gutters (70px between columns)
+    const columnGutter = 70;
+    const totalGutterSpace = (columnOrder.length + 1) * columnGutter;
+    const columnWidth = (width - totalGutterSpace) / columnOrder.length;
     
     // Position nodes in columns
     devices.forEach(device => {
@@ -258,7 +271,7 @@ const NetworkGraph: React.FC = () => {
       nodeMap.set(device.id, {
         id: device.id,
         status: device.status,
-        x: columnWidth * (columnIndex + 1),
+        x: columnGutter + (columnWidth / 2) + (columnIndex * (columnWidth + columnGutter)),
         y: verticalSpacing * (rowIndex + 1),
         column: column
       });
@@ -285,28 +298,158 @@ const NetworkGraph: React.FC = () => {
 
     setNodes(Array.from(nodeMap.values()));
     setEdges(edgeList);
+    
+    // Generate debug information
+    generateDebugInfo(devices, columns, columnOrder, edgeList);
   }, []);
+
+  const generateDebugInfo = (devices: Device[], columns: Record<string, string[]>, columnOrder: string[], edgeList: Edge[]) => {
+    // Find roots (nodes with no incoming edges)
+    const incomingCount = new Map<string, number>();
+    devices.forEach(device => {
+      if (!incomingCount.has(device.id)) incomingCount.set(device.id, 0);
+      device.links.forEach(target => {
+        incomingCount.set(target, (incomingCount.get(target) || 0) + 1);
+      });
+    });
+    
+    const roots = devices.filter(d => incomingCount.get(d.id) === 0).map(d => d.id);
+    
+    // Find hubs (nodes with many connections)
+    const connectionCount = new Map<string, number>();
+    devices.forEach(device => {
+      const incoming = incomingCount.get(device.id) || 0;
+      const outgoing = device.links.length;
+      connectionCount.set(device.id, incoming + outgoing);
+    });
+    
+    const hubs = Array.from(connectionCount.entries())
+      .filter(([_, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1]);
+    
+    // Find leaves (nodes with no outgoing edges)
+    const leaves = devices.filter(d => d.links.length === 0).map(d => d.id);
+    
+    // Count bidirectional edges
+    const bidirectionalCount = edgeList.filter(e => e.isBidirectional).length;
+    
+    // Detect cycles (strongly connected components)
+    const hasCycles = detectCycles(devices);
+    const cycleCount = hasCycles ? 1 : 0;
+    
+    // Validation warnings
+    const validations: string[] = [];
+    if (leaves.length === 0) {
+      validations.push('No leaves detected. The graph has no end point.');
+    }
+    if (cycleCount > 0) {
+      validations.push(`Large strongly-connected cycles detected (${cycleCount}). Layout may not be strictly left→right.`);
+    }
+    if (bidirectionalCount > 0) {
+      validations.push(`Graph contains many bidirectional edges (${bidirectionalCount}). This may indicate a mesh.`);
+    }
+    if (hubs.length >= 9) {
+      validations.push(`Graph has ${hubs.length} hub-like nodes (incoming ≥ 2). This might not be a simple flow.`);
+    }
+    
+    setDebugInfo({
+      roots,
+      hubs: hubs.map(h => h[0]),
+      leaves,
+      sccCount: cycleCount,
+      validations,
+      columns: columnOrder.map((col, idx) => ({
+        index: idx,
+        nodes: columns[col]
+      }))
+    });
+  };
+
+  const detectCycles = (devices: Device[]): boolean => {
+    const visited = new Set<string>();
+    const recStack = new Set<string>();
+    
+    const hasCycleDFS = (nodeId: string): boolean => {
+      visited.add(nodeId);
+      recStack.add(nodeId);
+      
+      const device = devices.find(d => d.id === nodeId);
+      if (device) {
+        for (const link of device.links) {
+          if (!visited.has(link)) {
+            if (hasCycleDFS(link)) return true;
+          } else if (recStack.has(link)) {
+            return true;
+          }
+        }
+      }
+      
+      recStack.delete(nodeId);
+      return false;
+    };
+    
+    for (const device of devices) {
+      if (!visited.has(device.id)) {
+        if (hasCycleDFS(device.id)) return true;
+      }
+    }
+    
+    return false;
+  };
+
+  // Update node heights after nodes are rendered
+  useEffect(() => {
+    const updateDimensions = () => {
+      const heights = new Map<string, number>();
+      const widths = new Map<string, number>();
+      nodeRefs.current.forEach((ref, id) => {
+        if (ref) {
+          heights.set(id, ref.offsetHeight);
+          widths.set(id, ref.offsetWidth);
+        }
+      });
+      setNodeHeights(heights);
+      setNodeWidths(widths);
+    };
+
+    // Delay to ensure DOM is fully rendered
+    const timer = setTimeout(updateDimensions, 100);
+    return () => clearTimeout(timer);
+  }, [nodes]);
 
   const getNodePosition = (nodeId: string): { x: number; y: number } => {
     const node = nodes.find(n => n.id === nodeId);
     return node ? { x: node.x, y: node.y } : { x: 0, y: 0 };
   };
 
-  const drawArrow = (x1: number, y1: number, x2: number, y2: number, isBidirectional: boolean = false, edgeIndex: number = 0, totalEdgesInGroup: number = 1): ArrowPath => {
+  const getNodeHeight = (nodeId: string): number => {
+    return nodeHeights.get(nodeId) || 40;
+  };
+
+  const getNodeWidth = (nodeId: string): number => {
+    return nodeWidths.get(nodeId) || 100;
+  };
+
+  const drawArrow = (x1: number, y1: number, x2: number, y2: number, isBidirectional: boolean = false, edgeIndex: number = 0, totalEdgesInGroup: number = 1, sourceId: string = '', targetId: string = ''): ArrowPath => {
     const angle = Math.atan2(y2 - y1, x2 - x1);
     const arrowLength = 12;
     
-    // Shorten the line to account for node size (rectangle extends 50 wide, 20 tall from center)
+    // Get actual node dimensions
+    const sourceHeight = getNodeHeight(sourceId);
+    const targetHeight = getNodeHeight(targetId);
+    const sourceWidth = getNodeWidth(sourceId);
+    const targetWidth = getNodeWidth(targetId);
+    
     // Calculate the actual intersection point with the rectangle
     const dx = x2 - x1;
     const dy = y2 - y1;
     const dist = Math.sqrt(dx * dx + dy * dy);
     
-    // Rectangle dimensions
-    const rectWidth = 100;
-    const rectHeight = 40;
-    const halfWidth = rectWidth / 2;
-    const halfHeight = rectHeight / 2;
+    // Rectangle dimensions (half sizes for calculations)
+    const halfWidthSource = sourceWidth / 2;
+    const halfHeightSource = sourceHeight / 2;
+    const halfWidthTarget = targetWidth / 2;
+    const halfHeightTarget = targetHeight / 2;
     
     // Stagger vertical or near-vertical lines to prevent overlap
     const isVertical = Math.abs(dx) < 50; // Consider lines vertical if horizontal distance is small
@@ -322,15 +465,15 @@ const NetworkGraph: React.FC = () => {
     // Calculate intersection with target rectangle
     const tx = Math.abs(dx / dist);
     const ty = Math.abs(dy / dist);
-    let offsetX2 = halfWidth;
-    let offsetY2 = halfHeight;
+    let offsetX2 = halfWidthTarget;
+    let offsetY2 = halfHeightTarget;
     
-    if (halfHeight * tx > halfWidth * ty) {
-      offsetX2 = halfWidth;
-      offsetY2 = halfWidth * ty / tx;
+    if (halfHeightTarget * tx > halfWidthTarget * ty) {
+      offsetX2 = halfWidthTarget;
+      offsetY2 = halfWidthTarget * ty / tx;
     } else {
-      offsetY2 = halfHeight;
-      offsetX2 = halfHeight * tx / ty;
+      offsetY2 = halfHeightTarget;
+      offsetX2 = halfHeightTarget * tx / ty;
     }
     
     // Apply the offset in the correct direction
@@ -338,15 +481,15 @@ const NetworkGraph: React.FC = () => {
     const shortenedY2 = y2 - Math.sign(dy) * offsetY2 - (arrowLength * Math.sin(angle));
     
     // Calculate intersection with source rectangle for bidirectional
-    let offsetX1 = halfWidth;
-    let offsetY1 = halfHeight;
+    let offsetX1 = halfWidthSource;
+    let offsetY1 = halfHeightSource;
     
-    if (halfHeight * tx > halfWidth * ty) {
-      offsetX1 = halfWidth;
-      offsetY1 = halfWidth * ty / tx;
+    if (halfHeightSource * tx > halfWidthSource * ty) {
+      offsetX1 = halfWidthSource;
+      offsetY1 = halfWidthSource * ty / tx;
     } else {
-      offsetY1 = halfHeight;
-      offsetX1 = halfHeight * tx / ty;
+      offsetY1 = halfHeightSource;
+      offsetX1 = halfHeightSource * tx / ty;
     }
     
     const shortenedX1 = x1 + Math.sign(dx) * offsetX1 + (arrowLength * Math.cos(angle)) + offsetMultiplier;
@@ -387,7 +530,26 @@ const NetworkGraph: React.FC = () => {
   return (
     <div className="network-graph">
       <div className="network-graph__header">
-        <h2 className="network-graph__title">Network Device Topology</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <h2 className="network-graph__title" style={{ marginBottom: 0, fontSize: '1.5rem', fontWeight: 700, color: '#ffffff' }}>Network Device Topology</h2>
+          <button 
+            onClick={() => setShowDebug(!showDebug)}
+            style={{
+              backgroundColor: '#374151',
+              color: '#ffffff',
+              border: '1px solid #9ca3af',
+              borderRadius: '0.25rem',
+              padding: '0.5rem 1rem',
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#111827'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#374151'}
+          >
+            {showDebug ? 'Hide Debug' : 'Show Debug'}
+          </button>
+        </div>
         <div className="network-graph__legend">
           <div className="legend-item">
             <div className="legend-icon legend-icon--up"></div>
@@ -404,6 +566,66 @@ const NetworkGraph: React.FC = () => {
           <span className="legend-count">Total Devices: {nodes.length}</span>
         </div>
       </div>
+      
+      {showDebug && debugInfo && (
+        <div style={{
+          backgroundColor: '#1f2937',
+          borderRadius: '0.5rem',
+          padding: '1rem',
+          marginBottom: '1rem',
+          color: '#ffffff',
+          fontSize: '0.875rem'
+        }}>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginTop: 0, marginBottom: '1rem', color: '#ffffff' }}>
+            Graph Debug
+          </h3>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 600, color: '#d1d5db', marginBottom: '0.25rem' }}>Roots:</div>
+            <div style={{ color: '#ffffff', fontFamily: 'monospace' }}>{debugInfo.roots.join(', ') || '(none)'}</div>
+          </div>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 600, color: '#d1d5db', marginBottom: '0.25rem' }}>Hubs:</div>
+            <div style={{ color: '#ffffff', fontFamily: 'monospace' }}>{debugInfo.hubs.join(', ') || '(none)'}</div>
+          </div>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 600, color: '#d1d5db', marginBottom: '0.25rem' }}>Leaves:</div>
+            <div style={{ color: '#ffffff', fontFamily: 'monospace' }}>{debugInfo.leaves.join(', ') || '(none)'}</div>
+          </div>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 600, color: '#d1d5db', marginBottom: '0.25rem' }}>SCC Count:</div>
+            <div style={{ color: '#ffffff', fontFamily: 'monospace' }}>{debugInfo.sccCount}</div>
+          </div>
+          
+          {debugInfo.validations.length > 0 && (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 600, color: '#d1d5db', marginBottom: '0.25rem' }}>Validation:</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {debugInfo.validations.map((warning: string, idx: number) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', color: '#f87171', lineHeight: 1.5 }}>
+                    <span style={{ flexShrink: 0, fontSize: '1rem' }}>⚠</span>
+                    <span>{warning}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <div style={{ marginBottom: 0 }}>
+            <div style={{ fontWeight: 600, color: '#d1d5db', marginBottom: '0.25rem' }}>Columns:</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {debugInfo.columns.map((col: any) => (
+                <div key={col.index} style={{ color: '#ffffff', fontFamily: 'monospace', fontSize: '0.8125rem' }}>
+                  <strong style={{ color: '#d1d5db' }}>col {col.index}:</strong> {col.nodes.join(', ')}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="network-graph__canvas">
         <div style={{ position: 'relative', width: '1200px', height: '800px' }}>
@@ -434,7 +656,7 @@ const NetworkGraph: React.FC = () => {
                   edgeIndex = verticalEdges.findIndex(e => e.source === edge.source && e.target === edge.target);
                 }
                 
-                const arrow = drawArrow(source.x, source.y, target.x, target.y, edge.isBidirectional, edgeIndex, totalEdgesInGroup);
+                const arrow = drawArrow(source.x, source.y, target.x, target.y, edge.isBidirectional, edgeIndex, totalEdgesInGroup, edge.source, edge.target);
                 
                 const sourceDevice = diagramConfig5.devices.find(d => d.id === edge.source);
                 const targetDevice = diagramConfig5.devices.find(d => d.id === edge.target);
@@ -502,31 +724,44 @@ const NetworkGraph: React.FC = () => {
           </svg>
           
           {/* Draw nodes as DIVs */}
-          {nodes.map(node => (
-            <div
-              key={node.id}
-              className={`node-div node-div--${node.status} ${hoveredNode === node.id ? 'node-div--hovered' : ''}`}
-              style={{
-                left: `${node.x - 50}px`,
-                top: `${node.y - 20}px`,
-              }}
-              onMouseEnter={() => setHoveredNode(node.id)}
-              onMouseLeave={() => setHoveredNode(null)}
-            >
-              <span className="node-div__text">
-                {node.id.length > 14 ? node.id.substring(0, 12) + '...' : node.id}
-              </span>
-              {hoveredNode === node.id && (
-                <div className="node-div__tooltip">
-                  {node.id}
+          {nodes.map(node => {
+            const nodeWidth = getNodeWidth(node.id);
+            const nodeHeight = getNodeHeight(node.id);
+            
+            return (
+              <div
+                key={node.id}
+                ref={(el) => {
+                  if (el) nodeRefs.current.set(node.id, el);
+                }}
+                className={`node-div node-div--${node.status} ${hoveredNode === node.id ? 'node-div--hovered' : ''}`}
+                style={{
+                  left: `${node.x - (nodeWidth / 2)}px`,
+                  top: `${node.y - (nodeHeight / 2)}px`,
+                }}
+                onMouseEnter={() => setHoveredNode(node.id)}
+                onMouseLeave={() => setHoveredNode(null)}
+              >
+                <div className="node-div__content">
+                  <span className="node-div__text">
+                    {node.id.length > 14 ? node.id.substring(0, 12) + '...' : node.id}
+                  </span>
+
+
                 </div>
-              )}
-            </div>
-          ))}
+                {hoveredNode === node.id && (
+                  <div className="node-div__tooltip">
+                    {node.id}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 };
 
-export default NetworkGraph;
+export default NetworkGraphv12;
+
