@@ -1,6 +1,10 @@
 // src/layout/graphLayers.ts
 import type { RawDevice } from "../types/types";
 
+/* The algorithm identifies strongly connected components (bidirectional/circular node groups) in the graph, computes the longest path from root nodes to assign base layers, then merges components with identical connectivity patterns into the same column; finally, it detects and separates message servers into their own column, shifts remaining infrastructure accordingly, and places all client nodes (identified by their low connectivity to hubs) in the final rightmost column.
+*/
+
+
 interface Graph {
   nodes: string[];
   outgoing: Map<string, string[]>;
@@ -142,11 +146,7 @@ function findSCCs(graph: Graph, excludeNodes: Set<string>): Map<string, number> 
 }
 
 // Build condensed graph where each SCC is a single node
-function buildCondensedGraph(
-  graph: Graph,
-  nodeToSCC: Map<string, number>,
-  excludeNodes: Set<string>
-) {
+function buildCondensedGraph(graph: Graph, nodeToSCC: Map<string, number>, excludeNodes: Set<string>) {
   const sccOutgoing = new Map<number, Set<number>>();
   const sccIncoming = new Map<number, Set<number>>();
   
@@ -175,9 +175,7 @@ function buildCondensedGraph(
 }
 
 // Compute layers for SCCs using longest path
-function computeSCCLayers(
-  condensed: ReturnType<typeof buildCondensedGraph>
-): Map<number, number> {
+function computeSCCLayers(condensed: ReturnType<typeof buildCondensedGraph>): Map<number, number> {
   const { sccOutgoing, sccIncoming, numSCCs } = condensed;
   const layers = new Map<number, number>();
 
@@ -222,10 +220,7 @@ function computeSCCLayers(
 }
 
 // Merge SCCs that have identical connectivity patterns
-function mergeIdenticalConnectivity(
-  condensed: ReturnType<typeof buildCondensedGraph>,
-  sccLayers: Map<number, number>
-): Map<number, number> {
+function mergeIdenticalConnectivity(condensed: ReturnType<typeof buildCondensedGraph>, sccLayers: Map<number, number>): Map<number, number> {
   const { sccOutgoing, sccIncoming, numSCCs } = condensed;
   const sccToGroup = new Map<number, number>();
   
