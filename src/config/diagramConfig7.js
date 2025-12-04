@@ -1,7 +1,8 @@
+
 // src/data/diagramConfig6.ts
 // import type { DiagramConfig } from "../types/types";
 
-export const diagramConfig6 = {
+export const diagramConfig7 = {
   devices: [
     { id: "plc-1-c", status: "down", links: ["message-server"] },
 

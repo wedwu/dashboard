@@ -1,15 +1,18 @@
+
 /**
  * Main application entry component.
  *
  * @module App
  */
 
-import DiagramAutoLayout from "./components/DiagramAutoLayout";
+import DeviceDiagram from './components/DeviceDiagram';
+import { diagramConfig7 } from './config/diagramConfig7';
 
-export default function App(): JSX.Element {
+export default function App() {
   return (
-    <>
-      <DiagramAutoLayout />
-    </>
+    <div>
+      <h1>Network Diagram</h1>
+      <DeviceDiagram devices={diagramConfig7.devices} />
+    </div>
   );
 }
