@@ -1,6 +1,13 @@
 // src/layout/graphLayers.ts
 import type { RawDevice } from "../types/types";
 
+// The algorithm iteratively propagates layer assignments from root nodes 
+// (those with no incoming edges) 
+// through the graph, repeatedly updating each node's layer to be 
+// one more than the maximum layer of any of its predecessors until 
+// the assignments stabilize, then pushes only true leaf nodes 
+// (with no outgoing edges) to a final column.
+
 interface Graph {
   nodes: string[];
   outgoing: Map<string, string[]>;
